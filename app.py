@@ -126,45 +126,33 @@ with tab2:
     else:
         st.write("아직 기록이 없습니다.")
 
-# --- ⭐ 새로 추가된 3번째 탭: 데이터 관리(삭제) ⭐ ---
+# --- 수정된 데이터 관리(삭제) 탭 로직 ---
 with tab3:
-    st.info("💡 구글 시트에 직접 들어가지 않고도 잘못된 데이터를 앱에서 바로 지울 수 있습니다.")
-    
     st.subheader("🗑️ 1. 장부에서 제품 완전히 지우기")
-    st.write("단종되거나 잘못 등록된 약품을 장부에서 아예 삭제합니다.")
     if not inventory_df.empty:
         inv_options = inventory_df['바코드'].astype(str) + " - " + inventory_df['제품명'].astype(str)
         item_to_delete = st.selectbox("삭제할 제품을 선택하세요", inv_options.tolist(), key="del_inv")
         
         if st.button("❌ 선택한 제품 장부에서 삭제"):
             del_barcode = item_to_delete.split(" - ")[0]
-            # 해당 바코드를 제외한 나머지 데이터만 남기기
-            new_inventory = inventory_df[inventory_df['바코드'].astype(str) != del_barcode]
+            # [수정됨] 삭제 후 .reset_index(drop=True)를 붙여서 번호표를 새로 정렬합니다.
+            new_inventory = inventory_df[inventory_df['바코드'].astype(str) != del_barcode].reset_index(drop=True)
             conn.update(worksheet="재고현황", data=new_inventory)
-            st.success(f"✅ '{item_to_delete}' 제품이 삭제되었습니다!")
+            st.success("✅ 제품 삭제 및 연동 완료!")
             st.rerun()
-    else:
-        st.write("등록된 제품이 없습니다.")
 
     st.divider()
 
     st.subheader("🗑️ 2. 잘못된 입출고 기록 삭제하기")
-    st.write("입출고 수량이나 제품을 잘못 눌렀을 때 해당 기록만 지웁니다. (주의: 여기서 지워도 현재 재고 숫자가 원래대로 복구되진 않으니, 재고는 1번 탭에서 다시 입출고를 잡아 맞춰주세요.)")
     if not log_df.empty:
-        # 방금 한 작업이 맨 위에 보이도록 순서 뒤집기
         recent_logs = log_df.copy().iloc[::-1]
-        log_options = []
-        for idx, row in recent_logs.iterrows():
-            log_options.append(f"[{idx}] {row['일시']} | {row['제품명']} | {row['작업']} {row['수량']}개")
-        
-        log_to_delete = st.selectbox("취소할 기록을 선택하세요 (가장 최근 기록이 맨 위에 있습니다)", log_options, key="del_log")
+        log_options = [f"[{idx}] {row['일시']} | {row['제품명']}" for idx, row in recent_logs.iterrows()]
+        log_to_delete = st.selectbox("취소할 기록 선택", log_options, key="del_log")
         
         if st.button("❌ 선택한 기록 삭제"):
-            # 대괄호 안의 원래 인덱스 번호 추출해서 지우기
             idx_to_drop = int(log_to_delete.split("]")[0][1:])
-            new_log_df = log_df.drop(index=idx_to_drop)
+            # [수정됨] 기록 삭제 후에도 번호표를 새로 정렬해야 구글 시트가 헷갈려하지 않습니다.
+            new_log_df = log_df.drop(index=idx_to_drop).reset_index(drop=True)
             conn.update(worksheet="기록장", data=new_log_df)
-            st.success("✅ 해당 기록이 삭제되었습니다!")
+            st.success("✅ 기록 삭제 및 연동 완료!")
             st.rerun()
-    else:
-        st.write("기록이 없습니다.")

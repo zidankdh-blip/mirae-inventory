@@ -23,6 +23,21 @@ def load_data():
 
 inventory_df, log_df = load_data()
 
+# ⭐ 불편함 1 해결: 바코드에 붙는 소수점(.0) 강제 제거 함수
+def clean_barcode(df):
+    if not df.empty and '바코드' in df.columns:
+        # 글자로 바꾸고, 맨 뒤에 .0이 있으면 없애버림
+        df['바코드'] = df['바코드'].astype(str).str.replace(r'\.0$', '', regex=True)
+        df['바코드'] = df['바코드'].replace('nan', '')
+    return df
+
+inventory_df = clean_barcode(inventory_df)
+log_df = clean_barcode(log_df)
+
+# 세션 상태(검색창 텍스트) 초기화
+if 'search_box' not in st.session_state:
+    st.session_state.search_box = ""
+
 # 3개의 탭 구성
 tab1, tab2, tab3 = st.tabs(["🚀 입출고 및 스캔", "📜 입출고 기록장", "⚙️ 데이터 관리 (삭제)"])
 
@@ -35,15 +50,22 @@ with tab1:
             if decoded_objs:
                 barcode_data = decoded_objs[0].data.decode('utf-8')
                 st.success(f"✅ 바코드 인식 성공: {barcode_data}")
-                st.session_state['search_input'] = barcode_data
+                st.session_state.search_box = barcode_data # 카메라 인식 후 검색창에 자동 입력
+                st.rerun()
             else:
                 st.warning("❌ 바코드를 인식하지 못했습니다. 더 밝은 곳에서 선명하게 찍어주세요.")
 
+    # ⭐ 불편함 2 해결: key="search_box"로 묶어서 언제든 초기화할 수 있게 만듦
     search_query = st.text_input("바코드 스캔 또는 제품명 직접 입력", 
-                                 value=st.session_state.get('search_input', ""),
+                                 key="search_box",
                                  placeholder="예: 8801234... 또는 박카스")
 
     if search_query:
+        # 터치 한 번으로 검색창 날리기 버튼
+        if st.button("🔄 지우고 다른 제품 검색하기"):
+            st.session_state.search_box = ""
+            st.rerun()
+            
         if '바코드' not in inventory_df.columns or '제품명' not in inventory_df.columns:
             st.error("⚠️ 시트 첫 줄에 '바코드'와 '제품명' 제목이 있어야 합니다.")
         else:
@@ -51,6 +73,7 @@ with tab1:
             match_name = inventory_df['제품명'].astype(str).str.contains(search_query, na=False)
             result = inventory_df[match_barcode | match_name]
             
+            # [A] 이미 등록된 제품일 때
             if not result.empty:
                 idx = result.index[0]
                 name = result.iloc[0]['제품명']
@@ -83,10 +106,13 @@ with tab1:
                         conn.update(worksheet="재고현황", data=inventory_df)
                         updated_log_df = pd.concat([log_df, new_log], ignore_index=True)
                         conn.update(worksheet="기록장", data=updated_log_df)
+                        
                         st.success(f"✅ {name} {action} 완료!")
-                        if 'search_input' in st.session_state:
-                            del st.session_state['search_input']
+                        # ⭐ 작업 완료 즉시 검색창 빈칸으로 만들기 ⭐
+                        st.session_state.search_box = ""
                         st.rerun()
+                        
+            # [B] 처음 보는 제품일 때 (신규 등록)
             else:
                 st.warning(f"⚠️ '{search_query}'(은)는 장부에 없습니다. 새로 등록할까요?")
                 with st.form("new_reg_form"):
@@ -106,9 +132,10 @@ with tab1:
                         conn.update(worksheet="재고현황", data=updated_inventory)
                         updated_log_df = pd.concat([log_df, new_log], ignore_index=True)
                         conn.update(worksheet="기록장", data=updated_log_df)
+                        
                         st.success(f"✅ {new_name} 등록 완료!")
-                        if 'search_input' in st.session_state:
-                            del st.session_state['search_input']
+                        # ⭐ 신규 등록 완료 즉시 검색창 빈칸으로 만들기 ⭐
+                        st.session_state.search_box = ""
                         st.rerun()
 
     st.divider()
@@ -136,7 +163,6 @@ with tab3:
         
         if st.button("❌ 선택한 제품 장부에서 삭제"):
             del_barcode = item_to_delete.split(" - ")[0]
-            # 안전장치: reset_index(drop=True) 적용 완료
             new_inventory = inventory_df[inventory_df['바코드'].astype(str) != del_barcode].reset_index(drop=True)
             conn.update(worksheet="재고현황", data=new_inventory)
             st.success(f"✅ 제품 삭제 및 연동 완료!")
@@ -153,7 +179,6 @@ with tab3:
         
         if st.button("❌ 선택한 기록 삭제"):
             idx_to_drop = int(log_to_delete.split("]")[0][1:])
-            # 안전장치: reset_index(drop=True) 적용 완료
             new_log_df = log_df.drop(index=idx_to_drop).reset_index(drop=True)
             conn.update(worksheet="기록장", data=new_log_df)
             st.success("✅ 해당 기록 삭제 및 연동 완료!")

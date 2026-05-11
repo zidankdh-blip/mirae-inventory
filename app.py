@@ -120,8 +120,77 @@ with tab2:
         st.dataframe(log_df.iloc[::-1], use_container_width=True, hide_index=True)
 
 with tab3:
-    st.info("💡 삭제 데이터는 [삭제기록] 탭에 보관됩니다.")
-    del_user = st.text_input("삭제자", value="약사")
-    if st.button("❌ 제품 삭제 (선택 제품)"):
-        # 삭제 로직은 이전과 동일 (생략)
-        pass
+    st.info("💡 여기서 삭제한 데이터는 구글 시트의 [삭제기록] 탭에 안전하게 보관됩니다.")
+    del_user = st.text_input("삭제 진행자 이름 (기록용)", value="약사")
+    
+    col_del1, col_del2 = st.columns(2)
+    
+    with col_del1:
+        st.subheader("🗑️ 제품 삭제")
+        if not inventory_df.empty and '바코드' in inventory_df.columns:
+            # 선택하기 편하게 [바코드 - 제품명] 형식으로 보여줍니다.
+            inv_options = inventory_df['바코드'].astype(str) + " - " + inventory_df['제품명'].astype(str)
+            item_to_delete = st.selectbox("삭제할 제품 선택", inv_options.tolist(), key="del_inv_box")
+            
+            if st.button("❌ 선택한 제품 영구 삭제", use_container_width=True):
+                with st.spinner("삭제 중..."):
+                    del_barcode = item_to_delete.split(" - ")[0]
+                    # 삭제할 데이터 백업용 추출
+                    del_target = inventory_df[inventory_df['바코드'].astype(str) == del_barcode].iloc[0]
+                    
+                    # 1. 삭제기록(휴지통)에 저장
+                    new_del_log = pd.DataFrame([{
+                        "삭제일시": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "구분": "제품삭제",
+                        "바코드": del_target['바코드'],
+                        "제품명": del_target['제품명'],
+                        "상세내용": f"잔여재고 {del_target['현재수량']}개 상태에서 삭제됨",
+                        "담당자": del_user
+                    }])
+                    
+                    # 2. 실제 재고현황에서 제외
+                    updated_inv = inventory_df[inventory_df['바코드'].astype(str) != del_barcode].reset_index(drop=True)
+                    
+                    # 3. 구글 시트 업데이트
+                    conn.update(worksheet="삭제기록", data=pd.concat([delete_df, new_del_log], ignore_index=True))
+                    conn.update(worksheet="재고현황", data=updated_inv)
+                    
+                    st.success(f"✅ {del_target['제품명']} 삭제 완료!")
+                    time.sleep(1)
+                    st.rerun()
+        else:
+            st.write("삭제할 제품이 없습니다.")
+
+    with col_del2:
+        st.subheader("🗑️ 입출고 기록 취소")
+        if not log_df.empty:
+            # 최근 기록 20개만 보여주기
+            recent_logs = log_df.tail(20).copy().iloc[::-1]
+            log_options = [f"[{idx}] {row['일시']} | {row['제품명']} | {row['작업']}" for idx, row in recent_logs.iterrows()]
+            
+            selected_log = st.selectbox("취소(삭제)할 기록 선택", log_options)
+            
+            if st.button("⚠️ 기록 취소", use_container_width=True):
+                with st.spinner("기록 삭제 중..."):
+                    log_idx = int(selected_log.split("]")[0][1:])
+                    del_log_target = log_df.loc[log_idx]
+                    
+                    # 삭제기록 백업
+                    new_del_log = pd.DataFrame([{
+                        "삭제일시": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "구분": "기록취소",
+                        "바코드": del_log_target['바코드'],
+                        "제품명": del_log_target['제품명'],
+                        "상세내용": f"[{del_log_target['작업']} {del_log_target['수량']}개] 기록 삭제됨",
+                        "담당자": del_user
+                    }])
+                    
+                    # 기록장에서 삭제
+                    updated_log = log_df.drop(index=log_idx).reset_index(drop=True)
+                    
+                    conn.update(worksheet="삭제기록", data=pd.concat([delete_df, new_del_log], ignore_index=True))
+                    conn.update(worksheet="기록장", data=updated_log)
+                    
+                    st.success("✅ 기록이 취소되었습니다.")
+                    time.sleep(1)
+                    st.rerun()

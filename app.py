@@ -9,7 +9,7 @@ st.title("💊 미래약국 스마트 재고관리 (스피드 모드)")
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# 2. 데이터 불러오기
+# 2. 데이터 불러오기 (⭐ 에러 돋보기 장착!)
 def load_data():
     try:
         inv = conn.read(worksheet="재고현황", ttl="0")
@@ -21,20 +21,19 @@ def load_data():
                 df['바코드'] = df['바코드'].astype(str).str.replace(r'\.0$', '', regex=True)
                 df['바코드'] = df['바코드'].replace('nan', '')
         return inv, log, del_log
-    except:
-        st.error("⚠️ 구글 시트에 [재고현황, 기록장, 삭제기록] 탭이 모두 있는지 확인해주세요.")
+    except Exception as e:
+        # 뭉뚱그린 에러 메시지 대신, 파이썬이 던지는 진짜 에러를 그대로 보여줍니다.
+        st.error(f"⚠️ 진짜 에러 원인: {e}")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
 inventory_df, log_df, delete_df = load_data()
 
-# ⭐ 핵심 해결 마법: 검색창을 매번 새것으로 만들기 위한 '번호표'
 if 'input_key' not in st.session_state:
     st.session_state.input_key = 0
 
 tab1, tab2, tab3 = st.tabs(["🚀 입출고/스캔", "📜 입출고 내역", "⚙️ 데이터 관리(휴지통)"])
 
 with tab1:
-    # 꼼수: 검색창의 key(이름표) 뒤에 번호를 붙여서, 번호가 바뀔 때마다 완전 새 빈칸으로 만듭니다.
     search_query = st.text_input(
         "바코드 스캔 또는 제품명 입력 (엔터)", 
         key=f"search_box_{st.session_state.input_key}",
@@ -61,7 +60,6 @@ with tab1:
                 
                 b1, b2 = st.columns(2)
                 
-                # --- 입고 처리 ---
                 if b1.button("🟢 입고 (+)", use_container_width=True):
                     new_q = row['현재수량'] + qty
                     inventory_df.at[idx, '현재수량'] = new_q
@@ -69,12 +67,10 @@ with tab1:
                     conn.update(worksheet="재고현황", data=inventory_df)
                     conn.update(worksheet="기록장", data=pd.concat([log_df, new_log], ignore_index=True))
                     
-                    # ⭐ 에러 없이 초기화: 번호표를 +1 올려서 아예 새로운 검색창을 띄우게 함
                     st.session_state.input_key += 1 
                     st.success("✅ 입고 완료!")
                     st.rerun()
                     
-                # --- 출고 처리 ---
                 if b2.button("🔴 출고 (-)", use_container_width=True):
                     if row['현재수량'] < qty:
                         st.error("재고가 부족합니다!")
@@ -85,12 +81,9 @@ with tab1:
                         conn.update(worksheet="재고현황", data=inventory_df)
                         conn.update(worksheet="기록장", data=pd.concat([log_df, new_log], ignore_index=True))
                         
-                        # ⭐ 에러 없이 초기화
                         st.session_state.input_key += 1 
                         st.success("✅ 출고 완료!")
                         st.rerun()
-            
-            # --- 신규 등록 처리 ---
             else:
                 st.warning("장부에 없는 제품입니다. 신규 등록할까요?")
                 with st.form("new_item"):
@@ -103,7 +96,6 @@ with tab1:
                         new_log = pd.DataFrame([{"일시": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "바코드": search_query, "제품명": n_name, "작업": "신규등록", "수량": n_qty, "잔여재고": n_qty, "담당자": n_user}])
                         conn.update(worksheet="기록장", data=pd.concat([log_df, new_log], ignore_index=True))
                         
-                        # ⭐ 에러 없이 초기화
                         st.session_state.input_key += 1 
                         st.success("✅ 신규 등록 완료!")
                         st.rerun()

@@ -23,11 +23,10 @@ def load_data():
 
 inventory_df, log_df = load_data()
 
-# 탭 메뉴 구성
-tab1, tab2 = st.tabs(["🚀 입출고 및 스캔", "📜 입출고 기록장"])
+# ⭐ 탭이 3개로 늘어났습니다! ⭐
+tab1, tab2, tab3 = st.tabs(["🚀 입출고 및 스캔", "📜 입출고 기록장", "⚙️ 데이터 관리 (삭제)"])
 
 with tab1:
-    # --- [카메라 스캐너 섹션] ---
     with st.expander("📸 카메라로 바코드 찍기 (클릭해서 열기)"):
         img_file = st.camera_input("바코드를 화면 중앙에 비추고 촬영하세요")
         if img_file:
@@ -40,7 +39,6 @@ with tab1:
             else:
                 st.warning("❌ 바코드를 인식하지 못했습니다. 더 밝은 곳에서 선명하게 찍어주세요.")
 
-    # --- [검색 및 처리 섹션] ---
     search_query = st.text_input("바코드 스캔 또는 제품명 직접 입력", 
                                  value=st.session_state.get('search_input', ""),
                                  placeholder="예: 8801234... 또는 박카스")
@@ -49,12 +47,10 @@ with tab1:
         if '바코드' not in inventory_df.columns or '제품명' not in inventory_df.columns:
             st.error("⚠️ 시트 첫 줄에 '바코드'와 '제품명' 제목이 있어야 합니다.")
         else:
-            # 바코드와 제품명 동시 검색
             match_barcode = inventory_df['바코드'].astype(str) == search_query
             match_name = inventory_df['제품명'].astype(str).str.contains(search_query, na=False)
             result = inventory_df[match_barcode | match_name]
             
-            # [A] 이미 등록된 제품일 때 (입출고 버튼 등장)
             if not result.empty:
                 idx = result.index[0]
                 name = result.iloc[0]['제품명']
@@ -91,8 +87,6 @@ with tab1:
                         if 'search_input' in st.session_state:
                             del st.session_state['search_input']
                         st.rerun()
-            
-            # [B] 처음 보는 제품일 때 (신규 등록 폼 등장)
             else:
                 st.warning(f"⚠️ '{search_query}'(은)는 장부에 없습니다. 새로 등록할까요?")
                 with st.form("new_reg_form"):
@@ -117,7 +111,6 @@ with tab1:
                             del st.session_state['search_input']
                         st.rerun()
 
-    # --- [재고 부족 알림판] ---
     st.divider()
     st.subheader("📊 전체 재고 현황 (5개 미만 빨간색)")
     def highlight_low_stock(row):
@@ -132,3 +125,46 @@ with tab2:
         st.dataframe(log_df.iloc[::-1], use_container_width=True, hide_index=True)
     else:
         st.write("아직 기록이 없습니다.")
+
+# --- ⭐ 새로 추가된 3번째 탭: 데이터 관리(삭제) ⭐ ---
+with tab3:
+    st.info("💡 구글 시트에 직접 들어가지 않고도 잘못된 데이터를 앱에서 바로 지울 수 있습니다.")
+    
+    st.subheader("🗑️ 1. 장부에서 제품 완전히 지우기")
+    st.write("단종되거나 잘못 등록된 약품을 장부에서 아예 삭제합니다.")
+    if not inventory_df.empty:
+        inv_options = inventory_df['바코드'].astype(str) + " - " + inventory_df['제품명'].astype(str)
+        item_to_delete = st.selectbox("삭제할 제품을 선택하세요", inv_options.tolist(), key="del_inv")
+        
+        if st.button("❌ 선택한 제품 장부에서 삭제"):
+            del_barcode = item_to_delete.split(" - ")[0]
+            # 해당 바코드를 제외한 나머지 데이터만 남기기
+            new_inventory = inventory_df[inventory_df['바코드'].astype(str) != del_barcode]
+            conn.update(worksheet="재고현황", data=new_inventory)
+            st.success(f"✅ '{item_to_delete}' 제품이 삭제되었습니다!")
+            st.rerun()
+    else:
+        st.write("등록된 제품이 없습니다.")
+
+    st.divider()
+
+    st.subheader("🗑️ 2. 잘못된 입출고 기록 삭제하기")
+    st.write("입출고 수량이나 제품을 잘못 눌렀을 때 해당 기록만 지웁니다. (주의: 여기서 지워도 현재 재고 숫자가 원래대로 복구되진 않으니, 재고는 1번 탭에서 다시 입출고를 잡아 맞춰주세요.)")
+    if not log_df.empty:
+        # 방금 한 작업이 맨 위에 보이도록 순서 뒤집기
+        recent_logs = log_df.copy().iloc[::-1]
+        log_options = []
+        for idx, row in recent_logs.iterrows():
+            log_options.append(f"[{idx}] {row['일시']} | {row['제품명']} | {row['작업']} {row['수량']}개")
+        
+        log_to_delete = st.selectbox("취소할 기록을 선택하세요 (가장 최근 기록이 맨 위에 있습니다)", log_options, key="del_log")
+        
+        if st.button("❌ 선택한 기록 삭제"):
+            # 대괄호 안의 원래 인덱스 번호 추출해서 지우기
+            idx_to_drop = int(log_to_delete.split("]")[0][1:])
+            new_log_df = log_df.drop(index=idx_to_drop)
+            conn.update(worksheet="기록장", data=new_log_df)
+            st.success("✅ 해당 기록이 삭제되었습니다!")
+            st.rerun()
+    else:
+        st.write("기록이 없습니다.")

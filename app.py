@@ -21,18 +21,21 @@ with tab1:
     search_query = st.text_input("바코드 스캔 또는 제품명 입력", placeholder="예: 8801234... 또는 박카스")
 
     if search_query:
-        if '바코드' not in inventory_df.columns:
-            st.error("⚠️ 시트 제목에 '바코드'가 없습니다. 구글 시트의 첫 줄을 [바코드, 제품명, 현재수량]으로 맞춰주세요.")
+        if '바코드' not in inventory_df.columns or '제품명' not in inventory_df.columns:
+            st.error("⚠️ 구글 시트 첫 줄에 '바코드'와 '제품명'이 있는지 확인해 주세요.")
         else:
-            result = inventory_df[inventory_df['바코드'].astype(str) == search_query]
+            # ⭐ 핵심 해결 부분: 바코드와 제품명 모두에서 검색합니다! ⭐
+            match_barcode = inventory_df['바코드'].astype(str) == search_query
+            match_name = inventory_df['제품명'].astype(str).str.contains(search_query, na=False)
+            result = inventory_df[match_barcode | match_name]
             
-            # [A] 이미 등록된 제품일 때
+            # [A] 장부에서 찾았을 때! (드디어 입고/출고 버튼 등장)
             if not result.empty:
                 idx = result.index[0]
                 name = result.iloc[0]['제품명']
                 current_qty = result.iloc[0]['현재수량']
                 
-                st.info(f"📦 제품: **{name}** | 현재 재고: **{current_qty}**개")
+                st.info(f"📦 제품 확인: **{name}** | 현재 재고: **{current_qty}**개")
                 
                 col1, col2 = st.columns(2)
                 qty_change = col1.number_input("수량 입력", min_value=1, value=1)
@@ -69,11 +72,12 @@ with tab1:
                         st.success(f"✅ {action} 처리 완료! (잔여: {new_qty}개)")
                         st.rerun()
             
-            # [B] 등록되지 않은 신규 제품일 때
+            # [B] 장부에 진짜 없을 때 (신규 등록)
             else:
-                st.warning("⚠️ 등록되지 않은 제품입니다. 신규 등록을 진행합니다.")
+                st.warning(f"⚠️ '{search_query}'(은)는 장부에 없는 제품입니다. 신규 등록을 진행합니다.")
                 with st.form("new_registration"):
-                    new_name = st.text_input("제품명 입력 (예: 광동쌍화탕 1박스)")
+                    # 약 이름을 쳤을 경우, 새 제품명 칸에 자동으로 그 이름을 넣어줍니다
+                    new_name = st.text_input("제품명 입력 (예: 광동쌍화탕 1박스)", value=search_query)
                     init_qty = st.number_input("초기 입고 수량", min_value=0, value=0)
                     user_name = st.text_input("등록 담당자명", value="약사")
                     

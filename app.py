@@ -9,7 +9,7 @@ st.title("💊 미래약국 스마트 재고관리 시스템")
 # 구글 시트 연결
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# 1. 데이터 불러오기 (캐시 없이 최신 상태 유지)
+# 1. 데이터 불러오기
 def load_data():
     inventory = conn.read(worksheet="재고현황", ttl="0")
     logs = conn.read(worksheet="기록장", ttl="0")
@@ -17,19 +17,19 @@ def load_data():
 
 inventory_df, log_df = load_data()
 
-# 탭 메뉴 구성 (입출고 / 기록장 확인)
+# 탭 메뉴 구성
 tab1, tab2 = st.tabs(["🚀 입출고 처리", "📜 입출고 기록장"])
 
 with tab1:
-    search_query = st.text_input("바코드 스캔 또는 제품명 입력", placeholder="스캐너를 찍어주세요")
+    search_query = st.text_input("바코드 스캔 또는 제품명 입력", placeholder="예: 8801234... 또는 박카스")
 
     if search_query:
-        # 데이터에 '바코드' 컬럼이 있는지 확인 (에러 방지)
         if '바코드' not in inventory_df.columns:
-            st.error("⚠️ 시트 제목에 '바코드'가 없습니다. 구글 시트 첫 줄을 확인해 주세요.")
+            st.error("⚠️ 시트 제목에 '바코드'가 없습니다. 구글 시트의 첫 줄을 [바코드, 제품명, 현재수량]으로 맞춰주세요.")
         else:
             result = inventory_df[inventory_df['바코드'].astype(str) == search_query]
             
+            # [A] 이미 등록된 제품일 때 (입고/출고)
             if not result.empty:
                 idx = result.index[0]
                 name = result.iloc[0]['제품명']
@@ -40,14 +40,12 @@ with tab1:
                 col1, col2, col3 = st.columns(3)
                 action = col1.radio("작업", ["입고(+)", "출고(-)"])
                 qty_change = col2.number_input("수량", min_value=1, value=1)
-                user_name = col3.text_input("담당자명", value="약사") # 누가 했는지 기록
+                user_name = col3.text_input("담당자명", value="약사") 
                 
-                if st.button("장부 업데이트 및 기록"):
-                    # 1. 재고 계산
+                if st.button("장부 업데이트"):
                     new_qty = current_qty + qty_change if action == "입고(+)" else current_qty - qty_change
                     inventory_df.at[idx, '현재수량'] = new_qty
                     
-                    # 2. 기록장 한 줄 추가
                     new_log = pd.DataFrame([{
                         "일시": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         "바코드": search_query,
@@ -58,35 +56,63 @@ with tab1:
                         "담당자": user_name
                     }])
                     
-                    # 3. 구글 시트 전송
                     conn.update(worksheet="재고현황", data=inventory_df)
-                    # 기록장은 기존 데이터에 붙여넣기
                     updated_log_df = pd.concat([log_df, new_log], ignore_index=True)
                     conn.update(worksheet="기록장", data=updated_log_df)
                     
                     st.success(f"처리 완료! (잔여: {new_qty}개)")
                     st.rerun()
+            
+            # [B] 처음 보는 바코드일 때 (신규 등록 창 띄우기)
             else:
-                st.warning("신규 제품 등록이 필요합니다.")
-                # (기존 신규 등록 로직 생략 - 필요시 추가 가능)
+                st.warning("⚠️ 등록되지 않은 바코드/제품입니다. 신규 등록을 진행합니다.")
+                with st.form("new_registration"):
+                    new_name = st.text_input("제품명 입력 (예: 광동쌍화탕 1박스)")
+                    init_qty = st.number_input("초기 입고 수량", min_value=0, value=0)
+                    user_name = st.text_input("등록 담당자명", value="약사")
+                    
+                    if st.form_submit_button("신규 등록 및 장부 추가"):
+                        # 1. 재고 시트에 추가
+                        new_inventory = pd.DataFrame([{
+                            "바코드": search_query, 
+                            "제품명": new_name, 
+                            "현재수량": init_qty
+                        }])
+                        updated_inventory_df = pd.concat([inventory_df, new_inventory], ignore_index=True)
+                        
+                        # 2. 기록장에 '신규등록'으로 추가
+                        new_log = pd.DataFrame([{
+                            "일시": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "바코드": search_query,
+                            "제품명": new_name,
+                            "작업": "신규등록",
+                            "수량": init_qty,
+                            "잔여재고": init_qty,
+                            "담당자": user_name
+                        }])
+                        updated_log_df = pd.concat([log_df, new_log], ignore_index=True)
+                        
+                        # 3. 서버 전송
+                        conn.update(worksheet="재고현황", data=updated_inventory_df)
+                        conn.update(worksheet="기록장", data=updated_log_df)
+                        
+                        st.success(f"✅ 신규 제품 '{new_name}' 등록이 완료되었습니다!")
+                        st.rerun()
 
-    # --- 재고 부족 알림 기능 (빨간색 표시) ---
+    # --- 재고 부족 알림 현황판 ---
     st.divider()
-    st.subheader("📊 현재 재고 현황 (5개 미만 빨간색)")
+    st.subheader("📊 전체 재고 현황 (5개 미만 빨간색 경고)")
     
     def highlight_low_stock(row):
-        # '현재수량'이 5 미만이면 해당 행을 빨간색으로
         return ['color: red; font-weight: bold' if row['현재수량'] < 5 else '' for _ in row]
 
     if not inventory_df.empty:
-        # 스타일 적용해서 테이블 표시
         styled_df = inventory_df.style.apply(highlight_low_stock, axis=1)
         st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
 with tab2:
-    st.subheader("📑 최근 입출고 내역")
+    st.subheader("📑 실시간 입출고 기록장")
     if not log_df.empty:
-        # 최근 기록이 위로 오도록 역순 표시
         st.dataframe(log_df.iloc[::-1], use_container_width=True, hide_index=True)
     else:
         st.write("기록이 아직 없습니다.")

@@ -2,15 +2,14 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
-from pyzbar.pyzbar import decode
-from PIL import Image
 
 # 1. 화면 설정
 st.set_page_config(page_title="미래약국 재고관리", layout="wide")
-st.title("💊 미래약국 스마트 재고관리 (자동 초기화)")
+st.title("💊 미래약국 스마트 재고관리 (스피드 모드)")
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
+# 2. 데이터 불러오기 (소수점 제거 포함)
 def load_data():
     try:
         inv = conn.read(worksheet="재고현황", ttl="0")
@@ -28,30 +27,17 @@ def load_data():
 
 inventory_df, log_df, delete_df = load_data()
 
-# ⭐ 검색창 자동 초기화를 위한 핵심 세팅
+# ⭐ 검색창 자동 초기화를 위한 세팅
 if 'search_box' not in st.session_state:
     st.session_state.search_box = ""
 
 tab1, tab2, tab3 = st.tabs(["🚀 입출고/스캔", "📜 입출고 내역", "⚙️ 데이터 관리(휴지통)"])
 
 with tab1:
-    with st.expander("📸 카메라 바코드 스캔"):
-        img_file = st.camera_input("바코드를 찍어주세요")
-        if img_file:
-            img = Image.open(img_file)
-            decoded = decode(img)
-            if decoded:
-                barcode = decoded[0].data.decode('utf-8')
-                if st.session_state.search_box != barcode:
-                    st.session_state.search_box = barcode
-                    st.rerun()
-            else:
-                st.warning("바코드 인식 실패. 더 밝은 곳에서 찍어주세요.")
-
-    # ⭐ 지우기 버튼 없앰 & key="search_box"로 직접 연결
-    search_query = st.text_input("바코드 또는 제품명 입력 (엔터)", 
+    # 카메라 기능이 빠지고 검색창만 깔끔하게 남았습니다.
+    search_query = st.text_input("바코드 스캔 또는 제품명 입력 (엔터)", 
                                  key="search_box",
-                                 placeholder="여기에 입력하거나 위 카메라를 쓰세요")
+                                 placeholder="스캐너로 찍거나 이름을 입력하세요")
 
     if search_query:
         match = inventory_df[
@@ -79,7 +65,7 @@ with tab1:
                 conn.update(worksheet="기록장", data=pd.concat([log_df, new_log], ignore_index=True))
                 st.success("✅ 입고 완료!")
                 
-                # ⭐ 작업 완료 즉시 검색창 빈칸으로 싹 지우기 ⭐
+                # 저장 후 검색창 싹 지우기
                 st.session_state.search_box = ""
                 st.rerun()
                 
@@ -95,7 +81,7 @@ with tab1:
                     conn.update(worksheet="기록장", data=pd.concat([log_df, new_log], ignore_index=True))
                     st.success("✅ 출고 완료!")
                     
-                    # ⭐ 작업 완료 즉시 검색창 빈칸으로 싹 지우기 ⭐
+                    # 저장 후 검색창 싹 지우기
                     st.session_state.search_box = ""
                     st.rerun()
                     
@@ -113,7 +99,7 @@ with tab1:
                     conn.update(worksheet="기록장", data=pd.concat([log_df, new_log], ignore_index=True))
                     st.success("✅ 신규 등록 완료!")
                     
-                    # ⭐ 작업 완료 즉시 검색창 빈칸으로 싹 지우기 ⭐
+                    # 저장 후 검색창 싹 지우기
                     st.session_state.search_box = ""
                     st.rerun()
 

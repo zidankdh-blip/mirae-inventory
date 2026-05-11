@@ -37,32 +37,44 @@ with tab1:
                 
                 st.info(f"📦 제품: **{name}** | 현재 재고: **{current_qty}**개")
                 
-                col1, col2, col3 = st.columns(3)
-                action = col1.radio("작업", ["입고(+)", "출고(-)"])
-                qty_change = col2.number_input("수량", min_value=1, value=1)
-                user_name = col3.text_input("담당자명", value="약사") 
+                # 수량과 담당자만 입력받기
+                col1, col2 = st.columns(2)
+                qty_change = col1.number_input("수량 입력", min_value=1, value=1)
+                user_name = col2.text_input("담당자명", value="약사") 
                 
-                if st.button("장부 업데이트"):
-                    new_qty = current_qty + qty_change if action == "입고(+)" else current_qty - qty_change
-                    inventory_df.at[idx, '현재수량'] = new_qty
+                st.write("어떤 작업을 진행할까요?")
+                # 직관적인 2개의 대형 버튼 배치
+                btn_col1, btn_col2 = st.columns(2)
+                in_btn = btn_col1.button("🟢 입고하기 (+)", use_container_width=True)
+                out_btn = btn_col2.button("🔴 출고하기 (-)", use_container_width=True)
+                
+                if in_btn or out_btn:
+                    action = "입고(+)" if in_btn else "출고(-)"
+                    # 출고일 때는 수량을 빼고, 입고일 때는 더함
+                    new_qty = current_qty + qty_change if in_btn else current_qty - qty_change
                     
-                    new_log = pd.DataFrame([{
-                        "일시": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "바코드": search_query,
-                        "제품명": name,
-                        "작업": action,
-                        "수량": qty_change,
-                        "잔여재고": new_qty,
-                        "담당자": user_name
-                    }])
-                    
-                    conn.update(worksheet="재고현황", data=inventory_df)
-                    updated_log_df = pd.concat([log_df, new_log], ignore_index=True)
-                    conn.update(worksheet="기록장", data=updated_log_df)
-                    
-                    st.success(f"처리 완료! (잔여: {new_qty}개)")
-                    st.rerun()
-            
+                    # 마이너스 재고 방지 (선택 사항)
+                    if new_qty < 0:
+                        st.error("⚠️ 출고 수량이 현재 재고보다 많습니다!")
+                    else:
+                        inventory_df.at[idx, '현재수량'] = new_qty
+                        
+                        new_log = pd.DataFrame([{
+                            "일시": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "바코드": search_query,
+                            "제품명": name,
+                            "작업": action,
+                            "수량": qty_change,
+                            "잔여재고": new_qty,
+                            "담당자": user_name
+                        }])
+                        
+                        conn.update(worksheet="재고현황", data=inventory_df)
+                        updated_log_df = pd.concat([log_df, new_log], ignore_index=True)
+                        conn.update(worksheet="기록장", data=updated_log_df)
+                        
+                        st.success(f"✅ {action} 처리 완료! (잔여: {new_qty}개)")
+                        st.rerun()
             # [B] 처음 보는 바코드일 때 (신규 등록 창 띄우기)
             else:
                 st.warning("⚠️ 등록되지 않은 바코드/제품입니다. 신규 등록을 진행합니다.")

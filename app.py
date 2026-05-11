@@ -126,20 +126,20 @@ with tab2:
     else:
         st.write("아직 기록이 없습니다.")
 
-# --- 수정된 데이터 관리(삭제) 탭 로직 ---
-with tab3:
-    st.subheader("🗑️ 1. 장부에서 제품 완전히 지우기")
-    if not inventory_df.empty:
-        inv_options = inventory_df['바코드'].astype(str) + " - " + inventory_df['제품명'].astype(str)
-        item_to_delete = st.selectbox("삭제할 제품을 선택하세요", inv_options.tolist(), key="del_inv")
-        
-        if st.button("❌ 선택한 제품 장부에서 삭제"):
-            del_barcode = item_to_delete.split(" - ")[0]
-            # [수정됨] 삭제 후 .reset_index(drop=True)를 붙여서 번호표를 새로 정렬합니다.
-            new_inventory = inventory_df[inventory_df['바코드'].astype(str) != del_barcode].reset_index(drop=True)
-            conn.update(worksheet="재고현황", data=new_inventory)
-            st.success("✅ 제품 삭제 및 연동 완료!")
-            st.rerun()
+## --- 데이터 관리(삭제) 탭의 수정된 코드 부분 ---
+
+if st.button("❌ 선택한 기록 삭제"):
+    # 1. 선택한 번호의 줄을 삭제
+    idx_to_drop = int(log_to_delete.split("]")[0][1:])
+    
+    # 2. 삭제 후 번호표(인덱스)를 0, 1, 2... 순서대로 다시 붙여주기 (핵심!)
+    new_log_df = log_df.drop(index=idx_to_drop).reset_index(drop=True)
+    
+    # 3. 새로 정렬된 깔끔한 장부를 구글 시트에 전송
+    conn.update(worksheet="기록장", data=new_log_df)
+    
+    st.success("✅ 기록이 삭제되었고 장부 연동이 성공적으로 유지되었습니다!")
+    st.rerun()
 
     st.divider()
 

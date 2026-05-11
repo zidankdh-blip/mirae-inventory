@@ -23,7 +23,7 @@ def load_data():
 
 inventory_df, log_df = load_data()
 
-# ⭐ 탭이 3개로 늘어났습니다! ⭐
+# 3개의 탭 구성
 tab1, tab2, tab3 = st.tabs(["🚀 입출고 및 스캔", "📜 입출고 기록장", "⚙️ 데이터 관리 (삭제)"])
 
 with tab1:
@@ -126,19 +126,20 @@ with tab2:
     else:
         st.write("아직 기록이 없습니다.")
 
-# --- [수정된] 데이터 관리(삭제) 탭 코드 ---
 with tab3:
+    st.info("💡 구글 시트에 직접 들어가지 않고도 잘못된 데이터를 앱에서 바로 지울 수 있습니다.")
+    
     st.subheader("🗑️ 1. 장부에서 제품 완전히 지우기")
     if not inventory_df.empty:
         inv_options = inventory_df['바코드'].astype(str) + " - " + inventory_df['제품명'].astype(str)
-        item_to_delete = st.selectbox("삭제할 제품 선택", inv_options.tolist(), key="del_inv")
+        item_to_delete = st.selectbox("삭제할 제품을 선택하세요", inv_options.tolist(), key="del_inv")
         
         if st.button("❌ 선택한 제품 장부에서 삭제"):
             del_barcode = item_to_delete.split(" - ")[0]
-            # [핵심] 삭제 후 반드시 번호표를 새로 붙여야 구글 시트 연동이 깨지지 않습니다.
+            # 안전장치: reset_index(drop=True) 적용 완료
             new_inventory = inventory_df[inventory_df['바코드'].astype(str) != del_barcode].reset_index(drop=True)
             conn.update(worksheet="재고현황", data=new_inventory)
-            st.success("✅ 제품이 삭제되었으며 연동 상태가 정상입니다!")
+            st.success(f"✅ 제품 삭제 및 연동 완료!")
             st.rerun()
 
     st.divider()
@@ -146,28 +147,14 @@ with tab3:
     st.subheader("🗑️ 2. 잘못된 입출고 기록 삭제하기")
     if not log_df.empty:
         recent_logs = log_df.copy().iloc[::-1]
-        log_options = [f"[{idx}] {row['일시']} | {row['제품명']}" for idx, row in recent_logs.iterrows()]
-        log_to_delete = st.selectbox("취소할 기록 선택", log_options, key="del_log")
+        log_options = [f"[{idx}] {row['일시']} | {row['제품명']} | {row['작업']} {row['수량']}개" for idx, row in recent_logs.iterrows()]
+        
+        log_to_delete = st.selectbox("취소할 기록을 선택하세요", log_options, key="del_log")
         
         if st.button("❌ 선택한 기록 삭제"):
             idx_to_drop = int(log_to_delete.split("]")[0][1:])
-            # [핵심] 기록 삭제 후에도 번호표를 0, 1, 2... 순으로 재정렬합니다.
+            # 안전장치: reset_index(drop=True) 적용 완료
             new_log_df = log_df.drop(index=idx_to_drop).reset_index(drop=True)
             conn.update(worksheet="기록장", data=new_log_df)
-            st.success("✅ 기록이 삭제되었으며 장부 연동이 유지됩니다!")
-            st.rerun()
-    st.divider()
-
-    st.subheader("🗑️ 2. 잘못된 입출고 기록 삭제하기")
-    if not log_df.empty:
-        recent_logs = log_df.copy().iloc[::-1]
-        log_options = [f"[{idx}] {row['일시']} | {row['제품명']}" for idx, row in recent_logs.iterrows()]
-        log_to_delete = st.selectbox("취소할 기록 선택", log_options, key="del_log")
-        
-        if st.button("❌ 선택한 기록 삭제"):
-            idx_to_drop = int(log_to_delete.split("]")[0][1:])
-            # [수정됨] 기록 삭제 후에도 번호표를 새로 정렬해야 구글 시트가 헷갈려하지 않습니다.
-            new_log_df = log_df.drop(index=idx_to_drop).reset_index(drop=True)
-            conn.update(worksheet="기록장", data=new_log_df)
-            st.success("✅ 기록 삭제 및 연동 완료!")
+            st.success("✅ 해당 기록 삭제 및 연동 완료!")
             st.rerun()
